@@ -9,6 +9,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Scanner;
+import java.util.concurrent.Semaphore;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -18,6 +19,8 @@ public class Servidor implements Runnable {
     private ArrayList<Integer> listaPuertos;
     private int clientesConectados = 0;
     private Socket jugador;
+    private int puertoLibre;
+    private int puntuacion;
 
     public Servidor(int _idServidor) {
         this.idServidor = _idServidor;
@@ -26,15 +29,49 @@ public class Servidor implements Runnable {
 
     @Override
     public void run() {
-        //EMPIEZA LA PARTE DEL JUEGO
-        System.out.println("Cliente conectado al servidor " + getIdServidor());
+        try {
+            //SE ABRE EL SOCKET PARA EL CLIENTE
+            ServerSocket serverCliente = new ServerSocket(getPuertoLibre());
+
+            getListaPuertos().remove(0);
+            Socket cliente = serverCliente.accept();
+            
+            setJugador(cliente);
+            System.out.println("Cliente aceptado");
+            setClientesConectados(getClientesConectados() + 1);
+            DataInputStream in = new DataInputStream(cliente.getInputStream());
+            DataOutputStream out = new DataOutputStream(cliente.getOutputStream());
+            Thread.sleep((int) Math.floor(Math.random() * 5000 + 1000));
+
+            //RECIBE DATOS DEL CLIENTE
+            out.writeBoolean(true);
+            System.out.println("Esperando respuesta del cliente...");
+            int puntos = in.readInt();
+            String nombreJugador = in.readUTF();
+            Logs.escribirConexion(idServidor, nombreJugador);
+            System.out.println("Datos del jugador: " + nombreJugador + " - " + puntos);
+
+            //LEE EL HTML, CAMBIA LOS DATOS Y ENVIA LA RESPUESTA AL CLIENTE
+            String respuesta = Conexion.leerHtml(nombreJugador, puntos);
+            out.writeUTF(respuesta);
+            System.out.println("Respuesta enviada al cliente");
+
+            //ESCRIBE LOS DATOS DEL USUARIO EN EL FICHERO
+            Conexion.subirDatos(idServidor, respuesta);
+            serverCliente.close();
+        } catch (IOException ex) {
+            Logs.escribirError(idServidor, ex.getLocalizedMessage());
+            Logger.getLogger(Servidor.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Servidor.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     private void generarPuertos() {
         listaPuertos = new ArrayList<>();
         int puertoInicial = idServidor * 10000;
 
-        for (int i = puertoInicial; i < puertoInicial + 10000; i++) {
+        for (int i = puertoInicial + 1; i < puertoInicial + 10000; i++) {
             listaPuertos.add(i);
         }
     }
@@ -47,14 +84,24 @@ public class Servidor implements Runnable {
         this.listaPuertos = listaPuertos;
     }
 
+    private static int recogerInformacion() {
+        Scanner scan = new Scanner(System.in);
+        System.out.println("ID del servidor (1 .. 6): ");
+        int id_servidor = Integer.parseInt(scan.nextLine());
+        return id_servidor;
+    }
+
     public static void main(String[] args) {
         //INFORMACION DE CADA SERVIDOR DE JUEGO
-        Scanner scan = new Scanner(System.in);
-        System.out.println("ID del servidor (1 .. 9): ");
-        int id_servidor = Integer.parseInt(scan.nextLine());
+        Logs logs = new Logs();
 
+        int id_servidor = 0;
+        while (id_servidor <= 0 || id_servidor > 6) {
+            id_servidor = recogerInformacion();
+        }
+        Logs.genLoggers(id_servidor);
+        
         Servidor servidorJuego = new Servidor(id_servidor);
-
         try {
             //EL SERVIDOR SE CONECTA AL GESTOR
             Socket gestor = new Socket("localhost", ServidorVersatil.PUERTO_JUEGO);
@@ -63,26 +110,30 @@ public class Servidor implements Runnable {
 
             while (true) {
                 inJuego.readBoolean();
-                outJuego.writeInt(servidorJuego.getListaPuertos().get(0)); //SE PASA EL PUERTO LIBRE AL GESTOR
+                servidorJuego.setPuertoLibre(servidorJuego.getListaPuertos().get(0));
+                outJuego.writeInt(servidorJuego.getPuertoLibre()); //SE PASA EL PUERTO LIBRE AL GESTOR
                 outJuego.writeInt(servidorJuego.getClientesConectados()); //SE PASA LA CANTIDAD DE CLIENTES EN ESTE MOMENTO
-                System.out.println("SERVIDOR " + servidorJuego.getIdServidor() + ": Puerto: " + servidorJuego.getListaPuertos().get(0) + ", Clientes: " + servidorJuego.getClientesConectados());
+                System.out.println("SERVIDOR " + servidorJuego.getIdServidor() + ": Puerto: " + servidorJuego.getPuertoLibre() + ", Clientes: " + servidorJuego.getClientesConectados());
                 boolean esAceptado = inJuego.readBoolean();
                 System.out.println("Servidor ha sido elegido: " + esAceptado);
                 if (esAceptado) { //SE HA SELECCIONADO ESE PUERTO
-                    ServerSocket serverCliente = new ServerSocket(servidorJuego.getListaPuertos().get(0));
-                    servidorJuego.getListaPuertos().remove(0);
-                    servidorJuego.setJugador(serverCliente.accept());
-                    System.out.println("Cliente aceptado");
-                    servidorJuego.setClientesConectados(servidorJuego.getClientesConectados() + 1);
+//                    ServerSocket serverCliente = new ServerSocket(servidorJuego.getListaPuertos().get(0));
+//                    servidorJuego.getListaPuertos().remove(0);
+//                    servidorJuego.setJugador(serverCliente.accept());
+//                    System.out.println("Cliente aceptado");
+//                    servidorJuego.setClientesConectados(servidorJuego.getClientesConectados() + 1);
                     Thread t = new Thread(servidorJuego);
                     t.start();
                 }
             }
         } catch (ConnectException ex) {
+            Logs.escribirError(id_servidor, ex.getLocalizedMessage());
             Logger.getLogger(Servidor.class.getName()).log(Level.SEVERE, null, ex);
         } catch (SocketException ex) {
+            Logs.escribirError(id_servidor, ex.getLocalizedMessage());
             Logger.getLogger(Servidor.class.getName()).log(Level.SEVERE, null, ex);
         } catch (IOException ex) {
+            Logs.escribirError(id_servidor, ex.getLocalizedMessage());
             Logger.getLogger(Servidor.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
@@ -110,26 +161,20 @@ public class Servidor implements Runnable {
     public void setJugador(Socket jugador) {
         this.jugador = jugador;
     }
-}
 
-//            //Abre servidor
-//            server = new ServerSocket(PUERTO); 
-//            System.out.println("Esperando gestor...");
-//            gestor = server.accept(); //Espera conexion 
-//
-//            DataOutputStream out = new DataOutputStream(gestor.getOutputStream()); //Envia mensajes del gestor
-//            DataInputStream in = new DataInputStream(gestor.getInputStream()); //Recibe mensajes del gestor
-//
-//            int puertoLibre = servidor.getListaPuertos().get(0);
-//            System.out.println("Puerto a enviar: " + puertoLibre);
-//            out.writeInt(puertoLibre); //Manda el primer puerto al servidor gestor
-//
-//            ServerSocket nuevoServer = new ServerSocket(puertoLibre);
-//            System.out.println("Esperando cliente por el puerto: " + puertoLibre);
-//            while (true) {
-//                Socket cliente = nuevoServer.accept();
-//                //Cada vez que acepta un cliente, se inicia un hilo nuevo
-//                //Servidor servidorHilo = new Servidor();
-//                //servidorHilo.start();
-//                //servidor.start();
-//            }
+    public int getPuertoLibre() {
+        return puertoLibre;
+    }
+
+    public void setPuertoLibre(int puertoLibre) {
+        this.puertoLibre = puertoLibre;
+    }
+
+    public int getPuntuacion() {
+        return puntuacion;
+    }
+
+    public void setPuntuacion(int puntuacion) {
+        this.puntuacion = puntuacion;
+    }
+}

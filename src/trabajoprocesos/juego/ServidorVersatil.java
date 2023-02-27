@@ -39,7 +39,7 @@ public class ServidorVersatil {
             while (true) {
                 System.out.println("GESTOR: Esperando clientes...");
                 Socket cliente = serverCliente.accept();
-                System.out.println("GESTOR: Cliente aceptado... ------------------------------------");
+                System.out.println("GESTOR: Cliente aceptado ------------------------------------");
 
                 estadoServidores(listaServidores, listaPuertos, cantidadClientes);
                 int pos = analizarEstado(listaPuertos, cantidadClientes);
@@ -95,18 +95,11 @@ public class ServidorVersatil {
         int aux = clientes.get(0);
         int pos = 0;
         for (int i = 0; i < clientes.size(); i++) {
-            if (clientes.get(i) < aux) {
+            if (clientes.get(i) < aux ) {
                 pos = i;
             }
         }
         return pos;
     }
 }
-
-//                int puertoLibre = inJuego.readInt();
-//                System.out.println("Puerto libre de juego: " + puertoLibre);
-//
-//                System.out.println("Aceptando clientes...");
-//                Socket cliente = server.accept(); //Acepta Clientes            
-//
 
